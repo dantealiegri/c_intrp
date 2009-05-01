@@ -1,0 +1,14 @@
+ ppmacros can wrap - how do we know to pass them back down?
+
+ with #define X we can know because of '#' .. maybe make read_input keep a context stack, and offer input to top of stack, get stack location back when input is accepted and push on stack if different?
+
+ ahh, that could be nice, that allows a func( y ) to be conditionally accepted .. and if the ; is on the next line the element parses it, else if it is a { then it opens a new frame.
+
+ how do we pass args to the vm?
+ just C functions, I guess?
+
+ vm_libpath
+
+
+ ok, so when we close a library or builtin, we push it to the next level.
+ root does following -> 
