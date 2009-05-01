@@ -1,11 +1,13 @@
 #include "interpreter_element.h"
 
-namespace Interpeter;
+#include <glibmm/ustring.h>
+
+namespace Interpreter
+{
 
 class Libraries : public Element
 {
-	Glib::ustring defaultLibraryPath[] =
-	{ "/lib/libc.so" };
+	static Glib::ustring defaultLibraryPath[] = { Glib::ustring("/lib/libc.so" )};
 	public:
 	Libraries( Element * parent = 0 ) : Element( parent )
 	 { }
@@ -18,4 +20,5 @@ class Libraries : public Element
 		}
 	}
 
+};
 }

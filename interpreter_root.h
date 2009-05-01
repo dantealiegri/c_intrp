@@ -1,6 +1,10 @@
+#ifndef __NS_INTERPRETER_ROOT_H__
+#define __NS_INTERPRETER_ROOT_H__
 #include "interpreter_element.h"
+#include "interpreter_libraries.h"
 
-namespace Interpeter;
+namespace Interpreter
+{
 
 class Root : public Element
 {
@@ -21,4 +25,6 @@ class Root : public Element
 	void registerPreprocessorMacro( Glib::ustring raw_ppmacro )
 	{
 	}
+};
 }
+#endif // __NS_INTERPRETER_ROOT_H__

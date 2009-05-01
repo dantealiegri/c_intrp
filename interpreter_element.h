@@ -1,5 +1,8 @@
+#ifndef __NS_INTERPRETER_ELEMENT_H__
+#define __NS_INTERPRETER_ELEMENT_H__
 #include <glibmm/ustring.h>
-namespace Interpeter;
+namespace Interpreter
+{
 
 
 class Element
@@ -14,4 +17,10 @@ class Element
 		{
 		}
 	}
+	void generateError( Glib::ustring )
+	{
+		// TODO
+	}
+};
 }
+#endif // __NS_INTERPRETER_ELEMENT_H__

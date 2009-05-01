@@ -1,6 +1,6 @@
 #include "interpreter_element.h"
 
-namespace Interpeter;
+namespace Interpreter;
 
 class Builtins : public Element
 {
