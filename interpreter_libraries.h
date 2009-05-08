@@ -155,13 +155,15 @@ class Libraries : public Element
 			Elf_Data * d = NULL;
 			while(  ( d = (elf_getdata( escn , d ))) != NULL )
 			{
-				const char * type_name =  "barfd";
+				const char * type_name =  "[[invalid]]";
 				if( d != NULL )
 					type_name = stype_to_string( d->d_type );
 
 				g_printf("%s'%i: %s - %s\n",path.c_str(),elf_ndxscn(escn), name,  type_name);
 				if( d && d->d_type == ELF_T_GNUHASH ) 
 					parse_gnu_hash( d );
+				else if( d && d->d_type == ELF_T_SYM ) 
+					parse_symbol_table( name,  d, eh, eshdr );
 			}
 		}
 
@@ -169,8 +171,56 @@ class Libraries : public Element
 		close( lfd );
 	}
 
+	void parse_symbol_table( const char * st_name , Elf_Data * ed, Elf * e, Elf32_Shdr * shdr )
+	{
+#define BIND_TYPE( S , T ) (ELF32_ST_BIND( S->st_info) == T )
+		Elf32_Sym * sym = (Elf32_Sym*)ed->d_buf;
+		Elf32_Sym * lastsym = (Elf32_Sym*)( (char*)ed->d_buf + ed->d_size);
+		g_printf( "================= % 0s SYMBOL TABLE =================\n",st_name);
+		int num = 0;
+		const char * name;
+		for( ; sym < lastsym; sym++, num++ )
+		{
+			if( (sym->st_value == 0 ) ||
+			    (BIND_TYPE( sym, STB_WEAK )) ||
+			    (BIND_TYPE( sym, STT_FUNC )) ||
+			    (BIND_TYPE( sym, STB_NUM )) )
+				continue;
+			name = elf_strptr(e, shdr->sh_link, (size_t) sym->st_name );
+			g_printf("%05i:  % 48s\n",num,name);
+		}
+		g_printf("=======================================================\n");
+	}
+
 	void parse_gnu_hash( Elf_Data * es )
 	{
+		uint32_t * array = (uint32_t*)es->d_buf;
+		uint32_t nbuckets = array[0];
+		uint32_t symndx = array[1];
+		uint32_t maskwords = array[2];
+		uint32_t shift2 = array[3];
+
+		if( maskwords % 2 != 0 )
+		{
+			g_printf("I:L:parse_gnu_hash: maskwords malformed ( not power of 2 )\n");
+			return;
+		}
+
+		uint32_t * bloom_filter = array+4;
+		uint32_t * hash_buckets = array + 4 + maskwords;
+		uint32_t * hash_values = array + 4 + nbuckets + maskwords;
+
+		g_printf( "======== GNU_HASH ========\n"
+		          " hash buckets:    % 8i\n"
+			  " symbol index:    % 8i\n"
+			  " bloom filter size: % 6i\n"
+			  " bloom filter shift: % 5i\n"
+			  " bloom filter: @0x%08x\n"
+			  " bucket:       @0x%08x\n"
+			  " values:       @0x%08x\n"
+			  "==========================\n",
+			   nbuckets,symndx,maskwords,shift2,
+			   bloom_filter, hash_buckets,hash_values);
 	}
 
 
