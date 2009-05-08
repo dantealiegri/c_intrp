@@ -1,0 +1,25 @@
+From: http://users.csc.calpoly.edu/~mhaungs/paper/node14.html#sections
+.bss - Uninitialized Data preset in process image
+.comment - Version control information
+.data
+.data1 - Initialized data preset in process image
+.debug - Information for Symbolic Debugging
+.dynamic - Dynamic linking information
+.dynstr - Strings needed for dynamic linking
+.dynsym - Dynamic linking symbol table
+.fini - Process termination code
+.got - Global offset Table
+.hash - Symbol hash table
+.init - Process initialization code
+.interp - Path name for a program interpreter
+.lin - Line number information for symbolic debugging
+.note - File notes
+.plt - Procedure linkage table
+.relname
+.relaname - Relocation Information
+.rodata
+.rodata1 - Read-only data
+.shstrtab - Section names
+.strtab - Unusally names associated with symbol table entries [[ USUALLY? -dao ]]
+.symtab - Symbol Table
+.text - Executable instructions

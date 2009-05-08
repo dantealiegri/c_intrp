@@ -1,6 +1,7 @@
 #include "interpreter_element.h"
 
-namespace Interpreter;
+namespace Interpreter
+{
 
 class Builtins : public Element
 {
@@ -16,4 +17,5 @@ class Builtins : public Element
 		}
 	}
 
+};
 }

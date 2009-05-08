@@ -3,6 +3,8 @@
 #include "interpreter_element.h"
 #include "interpreter_libraries.h"
 
+#include <glib/gprintf.h>
+
 namespace Interpreter
 {
 
@@ -13,6 +15,7 @@ class Root : public Element
 	Root( Element * parent = 0 ) : Element( parent )
 	{
 		 libs = new Libraries( this );
+		 g_printf( "Interpreter::Root: created.\n");
 	}
 
 	void addLine( Glib::ustring raw_input )
