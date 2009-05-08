@@ -150,11 +150,27 @@ class Libraries : public Element
 				g_printf("%s:Could not find name for section header.\n",path.c_str());
 				return;
 			}
-			printf("%s'%i: %s\n",path.c_str(),elf_ndxscn(escn), name);
+
+			Elf32_Shdr * eshdr = elf32_getshdr( escn );
+			Elf_Data * d = NULL;
+			while(  ( d = (elf_getdata( escn , d ))) != NULL )
+			{
+				const char * type_name =  "barfd";
+				if( d != NULL )
+					type_name = stype_to_string( d->d_type );
+
+				g_printf("%s'%i: %s - %s\n",path.c_str(),elf_ndxscn(escn), name,  type_name);
+				if( d && d->d_type == ELF_T_GNUHASH ) 
+					parse_gnu_hash( d );
+			}
 		}
 
 		elf_end( eh );
 		close( lfd );
+	}
+
+	void parse_gnu_hash( Elf_Data * es )
+	{
 	}
 
 
@@ -168,6 +184,22 @@ class Libraries : public Element
 			CZ(SHLIB); CZ(PHDR); CZ(TLS); CZ(SUNWBSS);
 			CZ(SUNWSTACK); CZ(NUM); CZ(GNU_EH_FRAME);
 			CZ(GNU_STACK); CZ(GNU_RELRO);
+			default:
+				ret = "unknown";
+				break;
+		}
+		return ret;
+	}
+#define SZ(T) case ELF_T_##T: ret = #T; break;
+	const char * stype_to_string( Elf_Type type )
+	{
+		const char * ret;
+		switch( type )
+		{
+			SZ(BYTE); SZ(ADDR); SZ(DYN); SZ(EHDR); SZ(HALF); SZ(OFF); SZ( PHDR);
+			SZ(RELA); SZ(REL); SZ(SHDR); SZ(SWORD); SZ(SYM); SZ(WORD); SZ(XWORD);
+			SZ(SXWORD); SZ(VDEF); SZ(VDAUX); SZ(VNEED); SZ(VNAUX); SZ(NHDR);
+			SZ(SYMINFO); SZ(MOVE); SZ(LIB);SZ(GNUHASH); SZ(AUXV); SZ(NUM);
 			default:
 				ret = "unknown";
 				break;
