@@ -19,18 +19,31 @@ namespace Interpreter
 class Libraries : public Element
 {
 	static Glib::ustring defaultLibraryPath[];
-	DebugChannel * init, *slisting, *symtab, *gnuhash;
+	DebugChannel * init, *slisting, *symtab, *gnuhash, *unk_slisting, *othr_sects;
+	DebugChannel * parse_error, *parse_overview;
 	public:
 	Libraries( Element * parent = 0 ) : Element( parent )
 	{
 		 init =  Debug::addChannel("init.library");
 		 slisting  = Debug::addChannel("symbols.parsing.library");
+		 unk_slisting  = Debug::addChannel("unknown_symbols.parsing_errors.library");
+		 parse_error  = Debug::addChannel("generic_error.parsing_errors.library");
 		 symtab  = Debug::addChannel("symboltable.parsing.library");
 		 gnuhash  = Debug::addChannel("gnuhash.parsing.library");
+		 othr_sects  = Debug::addChannel("other_sections.parsing.library");
+		 parse_overview  = Debug::addChannel("overview.parsing.library");
 
 		 init->setEnabled( true );
+		 parse_error->setEnabled( true );
+		 parse_overview->setEnabled( true );
+		 othr_sects->setEnabled( false );
+		 unk_slisting->setEnabled( true );
 		 slisting->setEnabled( false );
-		 symtab->setEnabled( true );
+
+		 unk_slisting->setPrefix("!! ");
+
+
+		 symtab->setEnabled( false );
 		 gnuhash->setEnabled( false );
 		init->print("Interpreter::Libraries starting");
 		if( elf_version(EV_CURRENT) == EV_NONE )
@@ -172,10 +185,20 @@ class Libraries : public Element
 					type_name = stype_to_string( d->d_type );
 
 				slisting->print("%s'%i: %s - %s\n",path.c_str(),elf_ndxscn(escn), name,  type_name);
-				if( d && d->d_type == ELF_T_GNUHASH ) 
+				if( !d )
+					continue;
+				if( d->d_type == ELF_T_GNUHASH ) 
 					parse_gnu_hash( d );
-				else if( d && d->d_type == ELF_T_SYM ) 
+				else if( d->d_type == ELF_T_SYM ) 
 					parse_symbol_table( name,  d, eh, eshdr );
+				else if( d->d_type == ELF_T_NHDR ) 
+					parse_nhdr( name,  d, eh, eshdr );
+				else if( d->d_type == ELF_T_BYTE ) 
+					parse_byte( name,  d, eh, eshdr );
+				else if( d->d_type == ELF_T_HALF ) 
+					parse_half( name,  d, eh, eshdr );
+				else
+					unk_slisting->print("Unhandled Symbol type %s (name:%s)\n",type_name,name);
 			}
 		}
 
@@ -183,8 +206,80 @@ class Libraries : public Element
 		close( lfd );
 	}
 
+	void parse_half( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+	{
+		// 16 bit entries. the name tells us what this is, I think.
+		
+		//  symbol version section
+		if( strcmp( ".gnu.version", st_name ) ==  0 )
+		{
+			parse_overview->print("** Symbol version section\n");
+		} // version needed?
+		else if( strcmp( ".gnu.version_r", st_name ) ==  0 )
+		{
+			parse_overview->print("** Symbol version requirement section\n");
+		}
+		else
+		unk_slisting->print("HALF section %s not parsed\n",st_name);
+	}
+	void parse_byte( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+	{
+		unk_slisting->print("BYTE section %s not parsed\n",st_name);
+	}
+
+	void parse_nhdr( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr* shdr  )
+	{
+		struct gnu_abi_note
+		{
+			Elf32_Word os_desc, major_abi,minor_abi,sub_abi;
+		};
+
+		gnu_abi_note * gn;
+
+		Elf32_Nhdr * n = (Elf32_Nhdr*)ed->d_buf;
+		othr_sects->print("Parsing %s NHDR\n", st_name );
+		othr_sects->print("Parsing NHDR (%i name bytes, %i descbytes, type %i)\n", n->n_namesz, n->n_descsz, n->n_type);
+		if( n->n_type > 3 )
+		{
+			parse_error->print("NHDR type not valid for object file\n");
+			return;
+		}
+		char * name = ((char*)ed->d_buf)+sizeof(Elf32_Nhdr);
+
+		if( strcmp( name , "GNU" ) == 0)
+		{
+			switch( n->n_type )
+			{
+				case NT_GNU_ABI_TAG:
+		gn = (gnu_abi_note*)((char*)ed->d_buf)+sizeof(Elf32_Nhdr)+ n->n_namesz;
+					parse_error->print("NHDR GNU Abi Tag not parsed\n");
+					break;
+				case NT_GNU_HWCAP:
+					parse_error->print("NHDR GNU hwcap Tag not parsed\n");
+					break;
+				case NT_GNU_BUILD_ID:
+				{
+					int bits = n->n_descsz * 8;
+					const char * id_type;
+					if( bits  == 160 )
+						id_type = "(sha1?)";
+					else if( bits == 128 )
+						id_type = "(random or md5?)";
+					else
+						id_type = "(custom)";
+					parse_overview->print("** Has %i bit %s Build Id.\n",
+					bits,id_type);
+					break;
+				}
+			}
+		}
+		othr_sects->print("Note is:[%s]\n",name);
+
+	}
+
 	void parse_symbol_table( const char * st_name , Elf_Data * ed, Elf * e, Elf32_Shdr * shdr )
 	{
+		int sym_count = 0;
 #define BIND_TYPE( S , T ) (ELF32_ST_BIND( S->st_info) == T )
 		Elf32_Sym * sym = (Elf32_Sym*)ed->d_buf;
 		Elf32_Sym * lastsym = (Elf32_Sym*)( (char*)ed->d_buf + ed->d_size);
@@ -213,6 +308,7 @@ class Libraries : public Element
 			else if( BIND_TYPE( sym, STT_NUM )) stype ="NUM";
 			symtab->print("%05i:  % 48s % 3s % 4s\n",num,name,sbind,stype);
 		}
+		sym_count = num;
 		symtab->print( "================ % 0s FUNCTION TABLE ================\n",st_name);
 		sym = (Elf32_Sym*)ed->d_buf;
 		num = 0;
@@ -226,6 +322,8 @@ class Libraries : public Element
 			symtab->print("%05i:  % 48s\n",num,name);
 		}
 		symtab->print("=======================================================\n");
+
+		parse_overview->print("%s symbol table has %i entires.\n",st_name,sym_count);
 	}
 
 	void parse_gnu_hash( Elf_Data * es )
@@ -238,7 +336,7 @@ class Libraries : public Element
 
 		if( maskwords % 2 != 0 )
 		{
-			gnuhash->print("I:L:parse_gnu_hash: maskwords malformed ( not power of 2 )\n");
+			parse_error->print("I:L:parse_gnu_hash: maskwords malformed ( not power of 2 )\n");
 			return;
 		}
 
@@ -257,6 +355,8 @@ class Libraries : public Element
 			  "==========================\n",
 			   nbuckets,symndx,maskwords,shift2,
 			   bloom_filter, hash_buckets,hash_values);
+
+		parse_overview->print("** has gnuhash lookup with %i byte bloom filter\n", maskwords);
 	}
 
 
@@ -286,6 +386,20 @@ class Libraries : public Element
 			SZ(RELA); SZ(REL); SZ(SHDR); SZ(SWORD); SZ(SYM); SZ(WORD); SZ(XWORD);
 			SZ(SXWORD); SZ(VDEF); SZ(VDAUX); SZ(VNEED); SZ(VNAUX); SZ(NHDR);
 			SZ(SYMINFO); SZ(MOVE); SZ(LIB);SZ(GNUHASH); SZ(AUXV); SZ(NUM);
+			default:
+				ret = "unknown";
+				break;
+		}
+		return ret;
+	}
+
+#define CRN(T) case NT_##T: ret = #T; break;
+	const char * coretype_to_string( Elf32_Word type )
+	{
+		const char * ret;
+		switch( type )
+		{
+			CRN(PRSTATUS);
 			default:
 				ret = "unknown";
 				break;

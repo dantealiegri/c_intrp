@@ -24,35 +24,35 @@ namespace Interpreter
 
 		void setEnabled( bool v )
 		{
-			printf("%s::setEnabled(%s)\n",name.c_str(),(v?"true":"false"));
+//			printf("%s::setEnabled(%s)\n",name.c_str(),(v?"true":"false"));
 			explicitly_enabled = v;
 		}
 
-		void xprint( const gchar * format, ...  )
-		{
-			va_list L;
-			va_start( L,format );
-			print( format , L );
-			va_end( L );
-		}
-		void print( const gchar * format , ... ) // va_list  args )
+		void print( const gchar * format , ... )
 		{
 			va_list L;
 			va_start( L,format );
 			if( parent && ! explicitly_enabled ) parent->print_owned( name.c_str(), format, L );
 			else if( explicitly_enabled )
 			{
-				g_vprintf( format, L );
+				gchar fnew[1024];
+				gchar nbuf[256];
+				snprintf( nbuf,256,"%s ",name.c_str());
+				snprintf( fnew, 1024, "%s%s", prefix.empty() ? nbuf : prefix.c_str(), format );
+				g_vprintf( fnew , L );
 			}
 			va_end( L );
 		}
+
+		void setPrefix( Glib::ustring _prefix ) { prefix = _prefix; }
 
 		protected:
 		bool explicitly_enabled;
 		Glib::ustring name;
 		DebugChannel * parent;
+		Glib::ustring prefix;
 
-		void print_owned( const gchar * owned ,  const gchar * format , ... ) // va_list  args )
+		void print_owned( const gchar * owned ,  const gchar * format , ... )
 		{
 			va_list L;
 			va_start( L,format );
@@ -188,8 +188,20 @@ namespace Interpreter
 			}
 
 			const char * ret = sprint_gchar_slist( tmp );
-			// TODO: delete tmp and data.
-			//
+
+
+			// free tmp list.
+
+			pos = 0;
+			while( pos <g_slist_length( tmp ))
+			{
+				gchar * c = (gchar*) g_slist_nth_data( tmp, pos );
+				free( c );
+				pos++;
+			}
+
+			g_slist_free( tmp );
+
 			return ret;
 
 		}
@@ -201,7 +213,7 @@ namespace Interpreter
 			GSList * in_order_l = split_top( name );
 			GSList * l =  g_slist_reverse( in_order_l );
 			GHashTable * curTable = channel_hierarchy;
-			printf("_globalAddDebugChannel(%s)\n",name.c_str());
+//			printf("_globalAddDebugChannel(%s)\n",name.c_str());
 
 			while( g_slist_length( l ) != 0 )
 			{
@@ -228,7 +240,7 @@ namespace Interpreter
 						if( p->t == NULL ) // change channel to group
 						{
 							p->t  = g_hash_table_new( g_str_hash, g_str_equal );
-							g_printf("*Created new channel, %s\n",key);
+//							g_printf("*Created new channel, %s\n",key);
 						}
 						lastChannel = p->c;
 						curTable = p->t;
@@ -247,12 +259,12 @@ namespace Interpreter
 					g_hash_table_insert( curTable, new_key, new_pair );
 					if( g_slist_length( l ) == 1 )
 					{
-						g_printf("*Created new channel, %s\n",key);
+//						g_printf("*Created new channel, %s\n",key);
 						final = new_pair->c;
 					}
 					else
 					{
-						g_printf("*Created new group, %s\n",key);
+//						g_printf("*Created new group, %s\n",key);
 						GHashTable *nh = g_hash_table_new( g_str_hash, g_str_equal );
 						new_pair->t = nh;
 						curTable = new_pair->t;
