@@ -197,6 +197,8 @@ class Libraries : public Element
 					parse_byte( name,  d, eh, eshdr );
 				else if( d->d_type == ELF_T_HALF ) 
 					parse_half( name,  d, eh, eshdr );
+				else if( d->d_type == ELF_T_DYN ) 
+					parse_dyn( name,  d, eh, eshdr );
 				else
 					unk_slisting->print("Unhandled Symbol type %s (name:%s)\n",type_name,name);
 			}
@@ -225,6 +227,58 @@ class Libraries : public Element
 	void parse_byte( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
 	{
 		unk_slisting->print("BYTE section %s not parsed\n",st_name);
+	}
+
+	void parse_dyn( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+	{
+		int sym_count = 0;
+#define BIND_TYPE( S , T ) (ELF32_ST_BIND( S->st_info) == T )
+		Elf32_Dyn * sym = (Elf32_Dyn*)ed->d_buf;
+		Elf32_Dyn * lastsym = (Elf32_Dyn*)( (char*)ed->d_buf + ed->d_size);
+
+		int num = 0;
+
+		for( ; sym < lastsym; sym++, num++ )
+		{
+			const char * stype;
+			if( sym->d_tag == DT_NULL ) continue;
+			stype = dynamic_type_to_string( sym->d_tag );
+			switch( sym->d_tag )
+			{
+				case DT_NEEDED:
+				parse_overview->print("ParseDyn.Requires: %s\n",
+				 elf_strptr(e, shdr->sh_link, (size_t) sym->d_un.d_val ));
+				break;
+				case DT_SONAME:
+				parse_overview->print("ParseDyn.SoName: %s\n",
+				 elf_strptr(e, shdr->sh_link, (size_t) sym->d_un.d_val ));
+				break;
+				case DT_INIT:
+				if( sym->d_un.d_ptr != 0 )
+				parse_overview->print("ParseDyn.Init: @ 0x%08x\n", sym->d_un.d_ptr);
+				break;
+				case DT_FINI:
+				if( sym->d_un.d_ptr != 0 )
+				parse_overview->print("ParseDyn.Fini: @ 0x%08x\n", sym->d_un.d_ptr);
+				break;
+				case DT_GNU_HASH:
+				if( sym->d_un.d_ptr != 0 )
+				parse_overview->print("ParseDyn.GnuHash: @ 0x%08x\n", sym->d_un.d_ptr);
+				break;
+				case DT_STRTAB:
+				if( sym->d_un.d_ptr != 0 )
+				parse_overview->print("ParseDyn.StringTable: @ 0x%08x\n", sym->d_un.d_val);
+				break;
+				case DT_SYMTAB:
+				if( sym->d_un.d_val != 0 )
+				parse_overview->print("ParseDyn.Symboltable: @ 0x%08x\n", sym->d_un.d_val);
+				break;
+				default:
+				parse_overview->print("ParseDyn: %05i:  % 14s\n",num,stype);
+			}
+		}
+
+		parse_overview->print("ParseDyn: %s: %i symbols\n",st_name,num );
 	}
 
 	void parse_nhdr( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr* shdr  )
@@ -376,6 +430,36 @@ class Libraries : public Element
 		}
 		return ret;
 	}
+#define DT(D) case DT_##D: ret = #D; break;
+	const char * dynamic_type_to_string( Elf32_Sword type )
+	{
+		static char unkbuf[64];
+		const char * ret;
+		switch( type )
+		{
+			DT(NULL); DT(NEEDED); DT(PLTRELSZ); DT(PLTGOT); DT(HASH);
+			DT(STRTAB); DT(SYMTAB); DT(RELA); DT(RELASZ); DT(RELAENT);
+			DT(STRSZ); DT(SYMENT); DT(INIT); DT(FINI); DT(SONAME);
+			DT(RPATH); DT(SYMBOLIC); DT(REL);DT(RELSZ); DT(RELENT);
+			DT(PLTREL); DT(DEBUG); DT(TEXTREL); DT(JMPREL); DT(BIND_NOW);
+			DT(INIT_ARRAY); DT(FINI_ARRAY); DT(INIT_ARRAYSZ);
+			DT(FINI_ARRAYSZ); DT(RUNPATH); DT(FLAGS); DT(PREINIT_ARRAY);
+			DT(PREINIT_ARRAYSZ); DT(GNU_PRELINKED); DT(GNU_CONFLICTSZ);
+			DT(GNU_LIBLISTSZ); DT(CHECKSUM); DT(PLTPADSZ);DT(MOVEENT);
+			DT(MOVESZ); DT(SYMINSZ); DT(SYMINENT); DT(FEATURE_1); DT(POSFLAG_1);
+			DT(GNU_HASH); DT(TLSDESC_PLT); DT(TLSDESC_GOT); DT(GNU_CONFLICT);
+			DT(GNU_LIBLIST); DT(CONFIG); DT(DEPAUDIT); DT(AUDIT); DT(PLTPAD);
+			DT(MOVETAB); DT(SYMINFO); DT(VERSYM); DT(RELACOUNT); DT(RELCOUNT);
+			DT(VERDEF);DT(VERDEFNUM); DT(VERNEED); DT(VERNEEDNUM);
+
+			default:
+				snprintf( unkbuf,64,"unknown(%i)",type);
+				ret = unkbuf;//"unknown";
+				break;
+		}
+		return ret;
+	}
+
 #define SZ(T) case ELF_T_##T: ret = #T; break;
 	const char * stype_to_string( Elf_Type type )
 	{
