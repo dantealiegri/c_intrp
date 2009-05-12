@@ -2,6 +2,7 @@
 #define __NS_INTERPRETER_ROOT_H__
 #include "interpreter_element.h"
 #include "interpreter_libraries.h"
+#include "debug_channels.h"
 
 #include <glib/gprintf.h>
 
@@ -14,6 +15,13 @@ class Root : public Element
 	public:
 	Root( Element * parent = 0 ) : Element( parent )
 	{
+		 //Debug::addChannel("root");
+		 DebugChannel * init = Debug::addChannel("init.root");
+		 DebugChannel * linput = Debug::addChannel("lineinput.root");
+
+		 init->setEnabled( true );
+		 linput->setEnabled( true );
+
 		 libs = new Libraries( this );
 		 g_printf( "Interpreter::Root: created.\n");
 	}

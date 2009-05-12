@@ -11,16 +11,28 @@
 #include <errno.h>
 #include <string.h>
 
+#include "debug_channels.h"
+
 namespace Interpreter
 {
 
 class Libraries : public Element
 {
 	static Glib::ustring defaultLibraryPath[];
+	DebugChannel * init, *slisting, *symtab, *gnuhash;
 	public:
 	Libraries( Element * parent = 0 ) : Element( parent )
 	{
-		g_printf("Interpreter::Libraries starting");
+		 init =  Debug::addChannel("init.library");
+		 slisting  = Debug::addChannel("symbols.parsing.library");
+		 symtab  = Debug::addChannel("symboltable.parsing.library");
+		 gnuhash  = Debug::addChannel("gnuhash.parsing.library");
+
+		 init->setEnabled( true );
+		 slisting->setEnabled( false );
+		 symtab->setEnabled( true );
+		 gnuhash->setEnabled( false );
+		init->print("Interpreter::Libraries starting");
 		if( elf_version(EV_CURRENT) == EV_NONE )
 		{
 			g_printf("Arg, Interpreter::Libraries barfed on init");
@@ -159,7 +171,7 @@ class Libraries : public Element
 				if( d != NULL )
 					type_name = stype_to_string( d->d_type );
 
-				g_printf("%s'%i: %s - %s\n",path.c_str(),elf_ndxscn(escn), name,  type_name);
+				slisting->print("%s'%i: %s - %s\n",path.c_str(),elf_ndxscn(escn), name,  type_name);
 				if( d && d->d_type == ELF_T_GNUHASH ) 
 					parse_gnu_hash( d );
 				else if( d && d->d_type == ELF_T_SYM ) 
@@ -176,20 +188,44 @@ class Libraries : public Element
 #define BIND_TYPE( S , T ) (ELF32_ST_BIND( S->st_info) == T )
 		Elf32_Sym * sym = (Elf32_Sym*)ed->d_buf;
 		Elf32_Sym * lastsym = (Elf32_Sym*)( (char*)ed->d_buf + ed->d_size);
-		g_printf( "================= % 0s SYMBOL TABLE =================\n",st_name);
+		symtab->print( "================= % 0s SYMBOL TABLE =================\n",st_name);
 		int num = 0;
 		const char * name;
 		for( ; sym < lastsym; sym++, num++ )
 		{
-			if( (sym->st_value == 0 ) ||
-			    (BIND_TYPE( sym, STB_WEAK )) ||
-			    (BIND_TYPE( sym, STT_FUNC )) ||
-			    (BIND_TYPE( sym, STB_NUM )) )
+			if( (sym->st_value == 0 ) )
 				continue;
 			name = elf_strptr(e, shdr->sh_link, (size_t) sym->st_name );
-			g_printf("%05i:  % 48s\n",num,name);
+			const char * sbind = "   ";
+			if( BIND_TYPE(sym,STB_WEAK)) sbind = "(w)";
+			else if( BIND_TYPE(sym,STB_GLOBAL)) sbind = "(G)";
+			else if( BIND_TYPE(sym,STB_LOCAL)) sbind = "(l)";
+			else if( BIND_TYPE(sym,STB_NUM)) sbind = "(N)";
+
+			const char * stype = "unk";
+			if( BIND_TYPE( sym, STT_NOTYPE )) stype ="none";
+			else if( BIND_TYPE( sym, STT_OBJECT )) stype ="obj";
+			else if( BIND_TYPE( sym, STT_FUNC )) stype ="func";
+			else if( BIND_TYPE( sym, STT_SECTION )) stype ="sctn";
+			else if( BIND_TYPE( sym, STT_FILE )) stype ="file";
+			else if( BIND_TYPE( sym, STT_COMMON )) stype ="cmon";
+			else if( BIND_TYPE( sym, STT_TLS )) stype ="tls";
+			else if( BIND_TYPE( sym, STT_NUM )) stype ="NUM";
+			symtab->print("%05i:  % 48s % 3s % 4s\n",num,name,sbind,stype);
 		}
-		g_printf("=======================================================\n");
+		symtab->print( "================ % 0s FUNCTION TABLE ================\n",st_name);
+		sym = (Elf32_Sym*)ed->d_buf;
+		num = 0;
+		for( ; sym < lastsym; sym++ , num ++ )
+		{
+			// exclue all unknown, weak , non-functions.
+			if( (sym->st_value == 0 ) ||
+			    ! (BIND_TYPE( sym, STT_FUNC )))
+				continue;
+			name = elf_strptr(e, shdr->sh_link, (size_t) sym->st_name );
+			symtab->print("%05i:  % 48s\n",num,name);
+		}
+		symtab->print("=======================================================\n");
 	}
 
 	void parse_gnu_hash( Elf_Data * es )
@@ -202,7 +238,7 @@ class Libraries : public Element
 
 		if( maskwords % 2 != 0 )
 		{
-			g_printf("I:L:parse_gnu_hash: maskwords malformed ( not power of 2 )\n");
+			gnuhash->print("I:L:parse_gnu_hash: maskwords malformed ( not power of 2 )\n");
 			return;
 		}
 
@@ -210,7 +246,7 @@ class Libraries : public Element
 		uint32_t * hash_buckets = array + 4 + maskwords;
 		uint32_t * hash_values = array + 4 + nbuckets + maskwords;
 
-		g_printf( "======== GNU_HASH ========\n"
+		gnuhash->print( "======== GNU_HASH ========\n"
 		          " hash buckets:    % 8i\n"
 			  " symbol index:    % 8i\n"
 			  " bloom filter size: % 6i\n"
