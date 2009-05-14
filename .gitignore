@@ -1,2 +1,4 @@
 *.o
 ci
+*.depends*
+*.swp

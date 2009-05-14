@@ -1,0 +1,7 @@
+Some definitions that are useful for ELF which aren't necessarily thrown out there:
+PLT -> Procedure Linkage Table
+GOT -> Global Offset Table
+
+BSS ( as in .bss section ) -> Block Started by Symbol [http://en.wikipedia.org/wiki/.bss]
+
+

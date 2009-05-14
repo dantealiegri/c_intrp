@@ -1,0 +1,4 @@
+Working on Dynamic Section parsing,
+ * some of these ptrs I don't know what they are supposed to point to. They aren't file offsets.
+    Possibly they are where, un fixed up, they should be mapped?
+
