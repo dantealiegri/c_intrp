@@ -215,6 +215,8 @@ class Libraries : public Element
 					parse_gnu_hash( d );
 				else if( eshdr->sh_type == SHT_SYMTAB ) 
 					parse_symbol_table( name,  d, eh, escn );
+				else if( eshdr->sh_type == SHT_DYNSYM ) 
+					parse_dynsym( name,  d, eh, escn );
 				else if( eshdr->sh_type == SHT_NOTE  ) 
 					parse_note( name,  d, eh, eshdr );
 				else if( eshdr->sh_type == SHT_STRTAB ) 
@@ -240,285 +242,310 @@ class Libraries : public Element
 		close( lfd );
 	}
 
+	void parse_dynsym( const char * st_name, Elf_Data * ed , Elf * e , Elf_Scn * shdr )
+	{
+		parse_generic_symbol_table( 1, st_name, ed, e, shdr );
+	}
+
 	void parse_rel( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
 	{
-		parse_overview->print("In parse rel for %s, links %i\n", st_name, shdr->sh_link );
-		if( ed->d_type != ELF_T_REL )
-		{
-			parse_error->print("parse_rel: section data unknown type (%s)\n", stype_to_string(ed->d_type));
-			return;
-		}
-		int total = ed->d_size / sizeof( Elf32_Rel );
-		if( ed->d_size % sizeof( Elf32_Rel ) != 0 )
-		{
-			parse_error->print("parse_rel: Unknown junk at the end of (%s)\n", stype_to_string(ed->d_type));
-			return;
-		}
-		parse_overview->print("%i relocations.\n", total );
-		Elf32_Rel * rel = (Elf32_Rel*)ed->d_buf;
-		Elf32_Rel * lastrel = (Elf32_Rel*)( (char*)ed->d_buf + ed->d_size);
-		int num = 0;
-		for( ; rel < lastrel ; rel++, num++ )
-		{
-			int symtype = ELF32_R_TYPE( rel->r_info );
-			int sym = ELF32_R_SYM( rel->r_info );
-			parse_overview->print("%05i:  % 4i % 8i 0x%08x\n",num, symtype, sym,
-				rel->r_offset);
-		}
-	}
-
-	void parse_string_table( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
-	{
-		if( ed->d_type != ELF_T_BYTE )
-		{
-			parse_error->print("parse_string_table: section data unknown type (%s)\n", stype_to_string(ed->d_type));
-			return;
-		}
-		unk_slisting->print("STRTAB section %s not parsed\n",st_name);
-	}
-
-	void parse_bss( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
-	{
-		parse_overview->print("NOBITS section %s not parsed yet.\n",st_name);
-	}
-
-	void parse_gnu_verneed( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
-	{
-		if( ed->d_type != ELF_T_VNEED )
-		{
-			parse_error->print("parse_gnu_verneed: section data unknown type %s\n", stype_to_string(ed->d_type));
-			return;
-		}
-
-		vneed_parse->print("VN: section size %i, Verdef size = %i\n",ed->d_size, sizeof(Elf32_Verneed));
-		Elf32_Verneed * need = (Elf32_Verneed*)ed->d_buf;
-		Elf32_Verneed * lastneed = (Elf32_Verneed*)( (char*)ed->d_buf + ed->d_size);
-		vneed_parse->print( "============= % 0s VERSION NEEDED TABLE =============\n",st_name);
-
-		Elf32_Vernaux * auxneed;
-		int num = 0;
-		const char * name;
-		for( ; need < lastneed; need++, num++ )
-		{
-			const char * need_type = NULL;
-			switch( need->vn_version )
+		// get .dynsym ( for now )
+			SymbolTableHead * sth  = workingLibrary->getSymbolTable( ".dynsym" );
+			parse_overview->print("In parse rel for %s, links %i\n", st_name, shdr->sh_link );
+			if( ed->d_type != ELF_T_REL )
 			{
-				case VER_NEED_NONE: need_type = "None"; break;
-				case VER_NEED_CURRENT: need_type = "Current"; break;
-				case VER_NEED_NUM: need_type = "Given Number"; break;
-				default: need_type="UNKNOWN";
+				parse_error->print("parse_rel: section data unknown type (%s)\n", stype_to_string(ed->d_type));
+				return;
 			}
-			vneed_parse->print("%s %i aux, file %i, vnaux off 0x%04x, next vneed @ 0x%04x\n",
-			 need_type, need->vn_cnt, need->vn_file, need->vn_aux, need->vn_next);
-			Elf32_Word next_vn = need->vn_aux;
-			void * vn_obj_base = (void*)need;
-			while( next_vn )
+			int total = ed->d_size / sizeof( Elf32_Rel );
+			if( ed->d_size % sizeof( Elf32_Rel ) != 0 )
 			{
-				const char * aux_flags = "[none]";
-				auxneed = (Elf32_Vernaux*)(((char*)vn_obj_base)+need->vn_aux);
-				if( auxneed->vna_flags != 0 )
-					if( auxneed->vna_flags == VER_FLG_WEAK )
-						aux_flags = "(weak)";
-					else
-						aux_flags = "UNKNOWN";
-
-				vneed_parse->print("-- aux: hash 0x%08x flags: %s name; %s next @ 0x%04x\n",
-					auxneed->vna_hash, aux_flags,
-					 elf_strptr( e, shdr->sh_link, (size_t)auxneed->vna_name), auxneed->vna_next);
-				next_vn = auxneed->vna_next;
-				vn_obj_base = auxneed;
+				parse_error->print("parse_rel: Unknown junk at the end of (%s)\n", stype_to_string(ed->d_type));
+				return;
 			}
-			need = (Elf32_Verneed*)vn_obj_base;
-
-		}
-
-		parse_overview->print("GNU_verneed section %i entries\n",num);
-	}
-
-	void parse_gnu_version( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
-	{
-		unk_slisting->print("GNU_versym section  type %s\n",stype_to_string( ed->d_type));
-		unk_slisting->print("section is %i bytes.\n",ed->d_size);
-		
-	}
-
-	void parse_progbits( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
-	{
-		static bool notified = false;
-		if( ! notified )
-		{
-			notified = true;
-			 unk_slisting->print("PROGBITS Not Parsed: first section %s \n",st_name);
-		}
-	}
-
-	void parse_dyn( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
-	{
-		int sym_count = 0;
-#define BIND_TYPE( S , T ) (ELF32_ST_BIND( S->st_info) == T )
-		Elf32_Dyn * sym = (Elf32_Dyn*)ed->d_buf;
-		Elf32_Dyn * lastsym = (Elf32_Dyn*)( (char*)ed->d_buf + ed->d_size);
-
-		int num = 0;
-
-		for( ; sym < lastsym; sym++, num++ )
-		{
-			const char * stype;
-			if( sym->d_tag == DT_NULL ) continue;
-			stype = dynamic_type_to_string( sym->d_tag );
-			switch( sym->d_tag )
+			parse_overview->print("%i relocations.\n", total );
+			parse_overview->print("cnt #:  type   symbol    Address \n");
+			Elf32_Rel * rel = (Elf32_Rel*)ed->d_buf;
+			Elf32_Rel * lastrel = (Elf32_Rel*)( (char*)ed->d_buf + ed->d_size);
+			int num = 0;
+			for( ; rel < lastrel ; rel++, num++ )
 			{
-				case DT_NEEDED:
-				dynsec->print("Requires: %s\n",
-				 elf_strptr(e, shdr->sh_link, (size_t) sym->d_un.d_val ));
-				break;
-				case DT_SONAME:
-				dynsec->print("SoName: %s\n",
-				 elf_strptr(e, shdr->sh_link, (size_t) sym->d_un.d_val ));
-				break;
-				case DT_INIT:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("Init: @ 0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_FINI:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("Fini: @ 0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_GNU_HASH:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("GnuHash: @ 0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_STRTAB:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("StringTable: @ 0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_SYMTAB:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("Symboltable: @ 0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_STRSZ:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("StringTable.Size: % 6i bytes\n", sym->d_un.d_val);
-				break;
-				case DT_SYMENT:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("SymbolTable.ElementSize: % 8i bytes\n", sym->d_un.d_val);
-				break;
-				case DT_PLTGOT:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("PLTGOT?:  0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_PLTREL:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("PLT Relocations Type:  % 6i\n", sym->d_un.d_val);
-				break;
-				case DT_JMPREL:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("PLT Relocations Location:  0x%08i\n", sym->d_un.d_ptr);
-				break;
-				case DT_PLTRELSZ:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("PLT Relocations Size:  % 6i bytes\n", sym->d_un.d_val);
-				break;
-				case DT_REL:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("REL Relocations Location:  0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_RELSZ:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("REL Relocations Size:  % 6i bytes\n", sym->d_un.d_val);
-				break;
-				case DT_RELENT:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("REL.ElementSize: % 8i bytes\n", sym->d_un.d_val);
-				break;
-				case DT_VERNEED:
-				if( sym->d_un.d_ptr != 0 )
-				dynsec->print("VERNEED Location:  0x%08x\n", sym->d_un.d_ptr);
-				break;
-				case DT_VERNEEDNUM:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("VERNEED Count:  % 6i\n", sym->d_un.d_val);
-				break;
-				case DT_VERSYM:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("VERSYM :  %08x\n", sym->d_un.d_val);
-				break;
-				case DT_RELCOUNT:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("REL.Count :  % 6i items\n", sym->d_un.d_val);
-				break;
-				case DT_CHECKSUM:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("Checksum :  %08x\n", sym->d_un.d_val);
-				break;
-				case DT_GNU_PRELINKED:
-				if( sym->d_un.d_val != 0 )
-				dynsec->print("Prelink.timestamp :  %s\n", ctime((time_t*)&sym->d_un.d_val));
-				break;
-				default:
-				dynsec->print("UNKNOWN: %05i:  % 14s\n",num,stype);
-			}
-		}
-
-		parse_overview->print("ParseDyn: %s: %i symbols\n",st_name,num );
-	}
-
-	void parse_note( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr* shdr  )
-	{
-		struct gnu_abi_note
-		{
-			Elf32_Word os_desc, major_abi,minor_abi,sub_abi;
-		};
-
-		gnu_abi_note * gn;
-
-		Elf32_Nhdr * n = (Elf32_Nhdr*)ed->d_buf;
-		othr_sects->print("Parsing %s NOTE\n", st_name );
-		othr_sects->print("Parsing NHDR (%i name bytes, %i descbytes, type %i)\n", n->n_namesz, n->n_descsz, n->n_type);
-		if( n->n_type > 3 )
-		{
-			parse_error->print("NHDR type not valid for object file\n");
-			return;
-		}
-		char * name = ((char*)ed->d_buf)+sizeof(Elf32_Nhdr);
-
-		if( strcmp( name , "GNU" ) == 0)
-		{
-			switch( n->n_type )
-			{
-				case NT_GNU_ABI_TAG:
-		gn = (gnu_abi_note*)((char*)ed->d_buf)+sizeof(Elf32_Nhdr)+ n->n_namesz;
-					parse_error->print("NHDR GNU Abi Tag not parsed\n");
-					break;
-				case NT_GNU_HWCAP:
-					parse_error->print("NHDR GNU hwcap Tag not parsed\n");
-					break;
-				case NT_GNU_BUILD_ID:
+				int symtype = ELF32_R_TYPE( rel->r_info );
+				int sym_num = ELF32_R_SYM( rel->r_info );
+				gchar * symname = NULL;
+				if( sth )
 				{
-					int bits = n->n_descsz * 8;
-					const char * id_type;
-					if( bits  == 160 )
-						id_type = "(sha1?)";
-					else if( bits == 128 )
-						id_type = "(random or md5?)";
-					else
-						id_type = "(custom)";
-					parse_overview->print("Has %i bit %s Build Id.\n",
-					bits,id_type);
+					Elf32_Sym * sym = (Elf32_Sym*)sth->table;
+					sym += sym_num;
+					symname = elf_strptr(e, sth->string_table_id , (size_t) sym->st_name );
+				}
+				parse_overview->print("%05i:  % 4i % 8i % 40s 0x%08x\n",num, symtype, sym_num,symname,
+					rel->r_offset);
+			}
+		}
+
+		void parse_string_table( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+		{
+			if( ed->d_type != ELF_T_BYTE )
+			{
+				parse_error->print("parse_string_table: section data unknown type (%s)\n", stype_to_string(ed->d_type));
+				return;
+			}
+			unk_slisting->print("STRTAB section %s not parsed\n",st_name);
+		}
+
+		void parse_bss( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+		{
+			parse_overview->print("NOBITS section %s not parsed yet.\n",st_name);
+		}
+
+		void parse_gnu_verneed( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+		{
+			if( ed->d_type != ELF_T_VNEED )
+			{
+				parse_error->print("parse_gnu_verneed: section data unknown type %s\n", stype_to_string(ed->d_type));
+				return;
+			}
+
+			vneed_parse->print("VN: section size %i, Verdef size = %i\n",ed->d_size, sizeof(Elf32_Verneed));
+			Elf32_Verneed * need = (Elf32_Verneed*)ed->d_buf;
+			Elf32_Verneed * lastneed = (Elf32_Verneed*)( (char*)ed->d_buf + ed->d_size);
+			vneed_parse->print( "============= % 0s VERSION NEEDED TABLE =============\n",st_name);
+
+			Elf32_Vernaux * auxneed;
+			int num = 0;
+			const char * name;
+			for( ; need < lastneed; need++, num++ )
+			{
+				const char * need_type = NULL;
+				switch( need->vn_version )
+				{
+					case VER_NEED_NONE: need_type = "None"; break;
+					case VER_NEED_CURRENT: need_type = "Current"; break;
+					case VER_NEED_NUM: need_type = "Given Number"; break;
+					default: need_type="UNKNOWN";
+				}
+				vneed_parse->print("%s %i aux, file %i, vnaux off 0x%04x, next vneed @ 0x%04x\n",
+				 need_type, need->vn_cnt, need->vn_file, need->vn_aux, need->vn_next);
+				Elf32_Word next_vn = need->vn_aux;
+				void * vn_obj_base = (void*)need;
+				while( next_vn )
+				{
+					const char * aux_flags = "[none]";
+					auxneed = (Elf32_Vernaux*)(((char*)vn_obj_base)+need->vn_aux);
+					if( auxneed->vna_flags != 0 )
+						if( auxneed->vna_flags == VER_FLG_WEAK )
+							aux_flags = "(weak)";
+						else
+							aux_flags = "UNKNOWN";
+
+					vneed_parse->print("-- aux: hash 0x%08x flags: %s name; %s next @ 0x%04x\n",
+						auxneed->vna_hash, aux_flags,
+						 elf_strptr( e, shdr->sh_link, (size_t)auxneed->vna_name), auxneed->vna_next);
+					next_vn = auxneed->vna_next;
+					vn_obj_base = auxneed;
+				}
+				need = (Elf32_Verneed*)vn_obj_base;
+
+			}
+
+			parse_overview->print("GNU_verneed section %i entries\n",num);
+		}
+
+		void parse_gnu_version( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+		{
+			unk_slisting->print("GNU_versym section  type %s\n",stype_to_string( ed->d_type));
+			unk_slisting->print("section is %i bytes.\n",ed->d_size);
+			
+		}
+
+		void parse_progbits( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+		{
+			static bool notified = false;
+			if( ! notified )
+			{
+				notified = true;
+				 unk_slisting->print("PROGBITS Not Parsed: first section %s \n",st_name);
+			}
+		}
+
+		void parse_dyn( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr * shdr )
+		{
+			int sym_count = 0;
+#define BIND_TYPE( S , T ) (ELF32_ST_BIND( S->st_info) == T )
+			Elf32_Dyn * sym = (Elf32_Dyn*)ed->d_buf;
+			Elf32_Dyn * lastsym = (Elf32_Dyn*)( (char*)ed->d_buf + ed->d_size);
+
+			int num = 0;
+
+			for( ; sym < lastsym; sym++, num++ )
+			{
+				const char * stype;
+				if( sym->d_tag == DT_NULL ) continue;
+				stype = dynamic_type_to_string( sym->d_tag );
+				switch( sym->d_tag )
+				{
+					case DT_NEEDED:
+					dynsec->print("Requires: %s\n",
+					 elf_strptr(e, shdr->sh_link, (size_t) sym->d_un.d_val ));
 					break;
+					case DT_SONAME:
+					dynsec->print("SoName: %s\n",
+					 elf_strptr(e, shdr->sh_link, (size_t) sym->d_un.d_val ));
+					break;
+					case DT_INIT:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("Init: @ 0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_FINI:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("Fini: @ 0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_GNU_HASH:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("GnuHash: @ 0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_STRTAB:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("StringTable: @ 0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_SYMTAB:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("Symboltable: @ 0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_STRSZ:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("StringTable.Size: % 6i bytes\n", sym->d_un.d_val);
+					break;
+					case DT_SYMENT:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("SymbolTable.ElementSize: % 8i bytes\n", sym->d_un.d_val);
+					break;
+					case DT_PLTGOT:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("PLTGOT?:  0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_PLTREL:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("PLT Relocations Type:  % 6i\n", sym->d_un.d_val);
+					break;
+					case DT_JMPREL:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("PLT Relocations Location:  0x%08i\n", sym->d_un.d_ptr);
+					break;
+					case DT_PLTRELSZ:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("PLT Relocations Size:  % 6i bytes\n", sym->d_un.d_val);
+					break;
+					case DT_REL:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("REL Relocations Location:  0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_RELSZ:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("REL Relocations Size:  % 6i bytes\n", sym->d_un.d_val);
+					break;
+					case DT_RELENT:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("REL.ElementSize: % 8i bytes\n", sym->d_un.d_val);
+					break;
+					case DT_VERNEED:
+					if( sym->d_un.d_ptr != 0 )
+					dynsec->print("VERNEED Location:  0x%08x\n", sym->d_un.d_ptr);
+					break;
+					case DT_VERNEEDNUM:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("VERNEED Count:  % 6i\n", sym->d_un.d_val);
+					break;
+					case DT_VERSYM:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("VERSYM :  %08x\n", sym->d_un.d_val);
+					break;
+					case DT_RELCOUNT:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("REL.Count :  % 6i items\n", sym->d_un.d_val);
+					break;
+					case DT_CHECKSUM:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("Checksum :  %08x\n", sym->d_un.d_val);
+					break;
+					case DT_GNU_PRELINKED:
+					if( sym->d_un.d_val != 0 )
+					dynsec->print("Prelink.timestamp :  %s\n", ctime((time_t*)&sym->d_un.d_val));
+					break;
+					default:
+					dynsec->print("UNKNOWN: %05i:  % 14s\n",num,stype);
 				}
 			}
+
+			parse_overview->print("ParseDyn: %s: %i symbols\n",st_name,num );
 		}
-		othr_sects->print("%s Note Type is:[%s]\n",st_name,name);
 
-	}
+		void parse_note( const char * st_name, Elf_Data * ed , Elf * e , Elf32_Shdr* shdr  )
+		{
+			struct gnu_abi_note
+			{
+				Elf32_Word os_desc, major_abi,minor_abi,sub_abi;
+			};
 
-	void parse_symbol_table( const char * st_name , Elf_Data * ed, Elf * e, Elf_Scn * sec )
-	{
-		Elf32_Shdr *shdr = elf32_getshdr( sec );
-		SymbolTableHead * sth;
+			gnu_abi_note * gn;
+
+			Elf32_Nhdr * n = (Elf32_Nhdr*)ed->d_buf;
+			othr_sects->print("Parsing %s NOTE\n", st_name );
+			othr_sects->print("Parsing NHDR (%i name bytes, %i descbytes, type %i)\n", n->n_namesz, n->n_descsz, n->n_type);
+			if( n->n_type > 3 )
+			{
+				parse_error->print("NHDR type not valid for object file\n");
+				return;
+			}
+			char * name = ((char*)ed->d_buf)+sizeof(Elf32_Nhdr);
+
+			if( strcmp( name , "GNU" ) == 0)
+			{
+				switch( n->n_type )
+				{
+					case NT_GNU_ABI_TAG:
+			gn = (gnu_abi_note*)((char*)ed->d_buf)+sizeof(Elf32_Nhdr)+ n->n_namesz;
+						parse_error->print("NHDR GNU Abi Tag not parsed\n");
+						break;
+					case NT_GNU_HWCAP:
+						parse_error->print("NHDR GNU hwcap Tag not parsed\n");
+						break;
+					case NT_GNU_BUILD_ID:
+					{
+						int bits = n->n_descsz * 8;
+						const char * id_type;
+						if( bits  == 160 )
+							id_type = "(sha1?)";
+						else if( bits == 128 )
+							id_type = "(random or md5?)";
+						else
+							id_type = "(custom)";
+						parse_overview->print("Has %i bit %s Build Id.\n",
+						bits,id_type);
+						break;
+					}
+				}
+			}
+			othr_sects->print("%s Note Type is:[%s]\n",st_name,name);
+
+		}
+
+		void parse_symbol_table( const char * st_name , Elf_Data * ed, Elf * e, Elf_Scn * sec )
+		{
+			parse_generic_symbol_table( 0, st_name, ed, e, sec );
+		}
+		void parse_generic_symbol_table( int type, const char * st_name , Elf_Data * ed, Elf * e, Elf_Scn * sec )
+		{
+			Elf32_Shdr *shdr = elf32_getshdr( sec );
+			SymbolTableHead * sth;
 		int sym_count = 0;
+
+		if( ed->d_type != ELF_T_SYM )
+		{
+			parse_error->print("parse_generic_symbol_tabble: section data unknown type (%s)\n", stype_to_string(ed->d_type));
+			return;
+		}
 #define BIND_TYPE( S , T ) (ELF32_ST_BIND( S->st_info) == T )
 		Elf32_Sym * sym = (Elf32_Sym*)ed->d_buf;
 		Elf32_Sym * lastsym = (Elf32_Sym*)( (char*)ed->d_buf + ed->d_size);
@@ -567,6 +594,7 @@ class Libraries : public Element
 
 		parse_overview->print("%s symbol table has %i entires.\n",st_name,sym_count);
 		sth  =  workingLibrary->addSymbolTable( st_name, sym_count,elf_ndxscn( sec ));
+		sth->string_table_id =  shdr->sh_link;
 		sth->table = table;
 	}
 

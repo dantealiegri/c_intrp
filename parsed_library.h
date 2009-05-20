@@ -7,6 +7,7 @@ struct SymbolTableHead
 {
 	int index_number;
 	int symbol_count;
+	int string_table_id;
 	Elf32_Word * table;
 };
 
@@ -26,7 +27,7 @@ class ParsedLibrary
 	{
 	}
 
-	SymbolTableHead* getSymbolIndex( Glib::ustring sym_ident )
+	SymbolTableHead* getSymbolTable( Glib::ustring sym_ident )
 	{
 		return (SymbolTableHead*)g_hash_table_lookup( symbolIndicies , sym_ident.c_str());
 	}
