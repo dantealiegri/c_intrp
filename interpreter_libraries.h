@@ -45,6 +45,8 @@ class Libraries : public Element
 		 unk_slisting->setEnabled( true );
 		 slisting->setEnabled( true );
 		 vneed_parse->setEnabled( false );
+		 symtab->setEnabled( true );
+		 gnuhash->setEnabled( false );
 
 		 vneed_parse->setPrefix("VNP: ");
 		 unk_slisting->setPrefix("!!! ");
@@ -53,9 +55,7 @@ class Libraries : public Element
 		 dynsec->setPrefix("PP ParseDyn.");
 
 
-		 symtab->setEnabled( false );
-		 gnuhash->setEnabled( false );
-		init->print("Interpreter::Libraries starting");
+		init->print("Interpreter::Libraries starting\n");
 		if( elf_version(EV_CURRENT) == EV_NONE )
 		{
 			g_printf("Arg, Interpreter::Libraries barfed on init");
@@ -104,15 +104,13 @@ class Libraries : public Element
 
 		Elf_Kind ek = elf_kind(eh);
 
-		g_printf("Elf is code: %i\n", ek );
 
 		if( ek != ELF_K_ELF )
 		{
-			g_printf("Not an ELF object, cannot continue.\n");
+			g_printf("Libraries::LoadLibrary: %s is not an ELF object, cannot continue.\n",path.c_str());
 			return;
 		}
 
-#if 0
 		int elfclass;
 
 		if( (elfclass = gelf_getclass(eh)) == ELFCLASSNONE )
@@ -120,6 +118,8 @@ class Libraries : public Element
 			g_printf("Library Endianness could not be determiend, aborting load\n");
 			return;
 		}
+
+		workingLibrary->bits == ( elfclass == ELFCLASS32 ? 32 :  64 );
 
 		g_printf("%s: %i-bit library\n", path.c_str(),  elfclass == ELFCLASS32 ? 32 : 64);
 
@@ -130,6 +130,20 @@ class Libraries : public Element
 		{
 			int errsv = errno;
 			g_printf("Could not find any ELF segments in file: %s",elf_errmsg(-1));
+			return;
+		}
+		const char * arch_short, * arch_long;
+		arch_short = elf_arch_to_string( ehdr->e_machine , &arch_long );
+
+		const char * etype_short, * etype_long;
+		etype_short = elf_type_to_string( ehdr->e_type, &etype_long );
+
+		g_printf("%s: Elf Object Type: %s(%s)\n",path.c_str(),etype_short, etype_long );
+		g_printf("%s: Architecture: %s (%s)\n",path.c_str(),arch_short,arch_long );
+
+		if( ehdr->e_machine != EM_386 || ehdr->e_type != ET_DYN )
+		{
+			g_printf("%s is not a i386 Architecture dynamic library.",elf_errmsg(-1));
 			return;
 		}
 		int num_ph = ehdr->e_phnum;
@@ -145,7 +159,6 @@ class Libraries : public Element
 
 			g_printf("%s'%i: %s (0x%x) @ 0x%x\n",path.c_str(),i,ptype_to_string( phdr.p_type ), phdr.p_type, phdr.p_offset);
 		}
-#endif
 
 		size_t shstrndx, shnum;
 
@@ -272,15 +285,16 @@ class Libraries : public Element
 			{
 				int symtype = ELF32_R_TYPE( rel->r_info );
 				int sym_num = ELF32_R_SYM( rel->r_info );
+				int strt_num = -1;
 				gchar * symname = NULL;
 				if( sth )
 				{
 					Elf32_Sym * sym = (Elf32_Sym*)sth->table;
 					sym += sym_num;
 					symname = elf_strptr(e, sth->string_table_id , (size_t) sym->st_name );
+					strt_num = sym->st_name;
 				}
-				parse_overview->print("%05i:  % 4i % 8i % 40s 0x%08x\n",num, symtype, sym_num,symname,
-					rel->r_offset);
+				parse_overview->print("%05i:  % 4i % 8i (%i)% 40s 0x%08x\n",num, symtype, sym_num,strt_num,symname, rel->r_offset);
 			}
 		}
 
@@ -550,15 +564,15 @@ class Libraries : public Element
 		Elf32_Sym * sym = (Elf32_Sym*)ed->d_buf;
 		Elf32_Sym * lastsym = (Elf32_Sym*)( (char*)ed->d_buf + ed->d_size);
 		int div_count = ed->d_size / sizeof( Elf32_Sym );
-		Elf32_Word * table = (Elf32_Word*)malloc( sizeof( Elf32_Word ) * div_count );
+		//Elf32_Word * table = (Elf32_Word*)malloc( sizeof( Elf32_Word ) * div_count );
 		symtab->print( "================= % 0s SYMBOL TABLE =================\n",st_name);
 		int num = 0;
 		const char * name;
 		for( ; sym < lastsym; sym++, num++ )
 		{
-			if( num < div_count ) table[num] = sym->st_name;
-			if( (sym->st_value == 0 ) )
-				continue;
+			//if( num < div_count ) table[num] = sym->st_name;
+		//	if( (sym->st_value == 0 ) )
+		//		continue;
 			name = elf_strptr(e, shdr->sh_link, (size_t) sym->st_name );
 			const char * sbind = "   ";
 			if( BIND_TYPE(sym,STB_WEAK)) sbind = "(w)";
@@ -575,7 +589,12 @@ class Libraries : public Element
 			else if( BIND_TYPE( sym, STT_COMMON )) stype ="cmon";
 			else if( BIND_TYPE( sym, STT_TLS )) stype ="tls";
 			else if( BIND_TYPE( sym, STT_NUM )) stype ="NUM";
-			symtab->print("%05i:  % 48s % 3s % 4s\n",num,name,sbind,stype);
+			char valbuf[24];
+			if( sym->st_value )
+				snprintf(valbuf,20,"@x%08x",sym->st_value);
+			else
+				snprintf(valbuf,20,"(addr: not local)");
+			symtab->print("%05i:  % 48s % 3s % 4s %s\n",num,name,sbind,stype,valbuf);
 		}
 		sym_count = num;
 		symtab->print( "================ % 0s FUNCTION TABLE ================\n",st_name);
@@ -595,7 +614,7 @@ class Libraries : public Element
 		parse_overview->print("%s symbol table has %i entires.\n",st_name,sym_count);
 		sth  =  workingLibrary->addSymbolTable( st_name, sym_count,elf_ndxscn( sec ));
 		sth->string_table_id =  shdr->sh_link;
-		sth->table = table;
+		sth->table = ed->d_buf;
 	}
 
 	void parse_gnu_hash( Elf_Data * es )
@@ -630,6 +649,47 @@ class Libraries : public Element
 
 		parse_overview->print("has gnuhash lookup with %i byte bloom filter\n", maskwords);
 	}
+#define EM(T) case EM_##T: ret = #T; longname = "No Descritpion"; break;
+#define EML(T,L) case EM_##T: ret = #T; longname = #L; break;
+	const char * elf_arch_to_string( Elf32_Half type, const char ** long_info )
+	{
+		static char unkbuf[64];
+		const char * ret;
+		const char * longname;
+		switch( type )
+		{
+			EML(NONE,None); EML(M32,AT&T WE 32100);
+			EML(SPARC,Sun SPARC); EML(386, Intel i386); EM(68K); EM(88K); EM(860);
+			EM(MIPS); EM(S370); EM(MIPS_RS3_LE); EM(PARISC); EM(VPP500);
+			EM(SPARC32PLUS); EM(960); EM(PPC);
+			default:
+			snprintf( unkbuf,64,"unknown(%i)",type);
+			ret = unkbuf;
+			break;
+		}
+		*long_info = longname;
+		return ret;
+	}
+#define ET(T) case ET_##T: ret = #T; break;
+#define ETL(T,L) case ET_##T: ret = #T; longname = #L; break;
+	const char * elf_type_to_string( Elf32_Half type, const char ** long_info = NULL )
+	{
+		static char unkbuf[64];
+		const char * ret;
+		const char * longname;
+		switch( type )
+		{
+			ETL(NONE,No File Type); ETL(REL,Relocatable File);
+			ETL(EXEC,Executable File); ETL(DYN,Shared Object File);
+			ETL(CORE,Core File);
+			default:
+			snprintf( unkbuf,64,"unknown(%i)",type);
+			ret = unkbuf;
+			break;
+		}
+		if( long_info ) *long_info = longname;
+		return ret;
+	}
 
 
 #define CZ(T) case PT_##T: ret = #T; break;
@@ -645,6 +705,23 @@ class Libraries : public Element
 			default:
 				ret = "unknown";
 				break;
+		}
+		return ret;
+	}
+#define I3R(T) case R_386_##T: ret = #T; break;
+	const char * i386_reloc_to_string( Elf32_Word type )
+	{
+		static char unkbuf[64];
+		const char * ret;
+		switch( type )
+		{
+			I3R(NONE); I3R(32); I3R(PC32); I3R(GOT32); I3R(PLT32); I3R(COPY); I3R(GLOB_DAT);
+			I3R(JMP_SLOT); I3R(RELATIVE);
+			default:
+				snprintf( unkbuf,64,"unknown(%i)",type);
+				ret = unkbuf;
+				break;
+
 		}
 		return ret;
 	}

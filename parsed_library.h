@@ -8,7 +8,7 @@ struct SymbolTableHead
 	int index_number;
 	int symbol_count;
 	int string_table_id;
-	Elf32_Word * table;
+	void * table;
 };
 
 class ParsedLibrary
@@ -16,6 +16,9 @@ class ParsedLibrary
 	Glib::ustring identifier;
 	GHashTable * symbolIndicies; // char * , SymbolTableHead *
 	public:
+
+	int bits; // 32 or 64, now.
+	int machine; // EM_* from elf.h
 	ParsedLibrary( Glib::ustring _identifier )
 	{
 		symbolIndicies = g_hash_table_new( g_str_hash , g_str_equal );
